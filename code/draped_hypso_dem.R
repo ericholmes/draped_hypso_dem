@@ -11,9 +11,11 @@ library(ggspatial)
 library(ggpattern)
 library(ggnewscale)
 library(scales)
+library(cowplot)
 
-saveplot = F
+saveplot = T
 oroville_df <- data.frame(Y = 39.534344, X = -121.486103)
+oroville_sf <- st_as_sf(oroville_df, coords = c("X", "Y"), crs = 4326)
 
 # Get US state map data
 us_states <- map_data("state")
@@ -21,46 +23,36 @@ cali <- us_states[us_states$region == "california",]
 polygon <- st_polygon(list(as.matrix(us_states[us_states$region == "california",c("long", "lat")])))
 cali_sf <- st_sf(id = cali$region[1], geometry = st_sfc(polygon), crs = 4326)
 
-oroville_sf <- st_as_sf(oroville_df, coords = c("X", "Y"), crs = 4326)
+target_huc8 <- nhdplusTools::get_huc(AOI = oroville_sf, type = "huc08")
+
+target_huc8$huc8
 
 #Load NHD HUC8s
 huc6 <- nhdplusTools::get_huc(AOI = oroville_sf, type = "huc06")
 
 huc6 <- st_transform(huc6, st_crs(cali_sf))
 
-# huc8_all$huc4 <- substr(huc8_all$huc8, 1, 4)
-# huc8_all$huc6 <- substr(huc8_all$huc8, 1, 6)
+huc8 <- nhdplusTools::get_huc(id = c("18020121", "18020122", "18020123"), type = "huc08")
 
-# huc8_dissolve <- huc8_all %>%
-#   group_by(huc6) %>%  # Group by the categorical variable
-#   summarise(geometry = st_union(geometry)) %>%  # Combine geometries
-#   st_as_sf()  # Ensure the result is an sf object
+huc8 <- st_transform(huc8, st_crs(cali_sf))
 
-# get_upstream_ids(target_comid, max_search_distance = 1e6)
-
-# huc8_single <- st_union(huc8_all)
-
-# Filter HUC-8 polygons by intersection with cali boundary
-# huc8_nv <- st_intersection(huc8_all, cali_sf)
-
+feather_dissolve <- huc8 %>%
+  summarise(geometry = st_union(geometry)) %>%  # Combine geometries
+  st_as_sf()  # Ensure the result is an sf object
+feather_bbox <- st_bbox(feather_dissolve)
+feather_bbox_sf<- st_as_sfc(feather_bbox)
 #Load rivers
-nhd_flow <- nhdplusTools::get_nhdplus(AOI = huc6, realization = "flowline", streamorder = 4)
+nhd_flow <- nhdplusTools::get_nhdplus(AOI = feather_dissolve, realization = "flowline")
 nhd_flow <- st_transform(nhd_flow, st_crs(cali_sf))
-
+nhd_flow
+unique(nhd_flow$streamorde)
 #load lakes
-nhd_wb <- nhdplusTools::get_waterbodies(AOI = huc6)
+nhd_wb <- nhdplusTools::get_waterbodies(AOI = feather_dissolve)
 nhd_wb <- st_transform(nhd_wb, st_crs(cali_sf))
 
 # Download elevation data using the 'elevatr' package
-elevation_data <- get_elev_raster(locations = huc6, z = 8, prj = st_crs(4326)$proj4string)
-elevation_data <- mask(elevation_data, huc8_dissolve)
-
-# Convert raster to a data frame for ggplot
-# elevation_df <- as.data.frame(as(elevation_data, "SpatialPixelsDataFrame"))
-# elev_sf <- st_as_sf(elevation_df, coords = c("x", "y"))
-# colnames(elevation_df) <- c("elevation", "x", "y")
-# 
-# hs <- hillshader(elevation_data)
+elevation_data <- get_elev_raster(locations = feather_dissolve, z = 9, prj = st_crs(4326)$proj4string)
+elevation_data <- mask(elevation_data, feather_dissolve)
 
 r <- rast(elevation_data)
 ## Create hillshade effect
@@ -80,26 +72,31 @@ index <- hill %>%
   mutate(index_col = round(index_col)) %>%
   pull(index_col)
 vector_cols <- pal_greys[index]
-##Save map
-if(saveplot == T){png("output/Draped_hypso_dem.png",
-                      height = 5, width = 5, units = "in", res = 1000, family = "serif")}
 
-ggplot() +
+##Save map
+if(saveplot == T){png("output/Draped_hypso_dem_feather_inset2.png",
+                      height = 6, width = 6, units = "in", res = 1000, family = "serif")}
+range(r)
+map <- ggplot() +
   geom_spatraster(data = hill, fill = vector_cols, maxcell = Inf, alpha = 1) +
   geom_spatraster(data = r, maxcell = Inf, show.legend = F) +
-  scale_fill_hypso_tint_c( limits = c(-200, 4500),
+  scale_fill_hypso_tint_c(limits = c(0, 2730),
                            palette = "wiki-2.0_hypso",
-                           alpha = 0.5,
+                          # palette = "colombia",
+                          # palette = "usgs-gswa2",
+                           alpha = 0.6,
                            labels = label_comma(),
-                           breaks = c(
-                             seq(-200, 1000, 200),
+                           breaks = c(seq(0, 1000, 200),
                              seq(1100, 2500, 100),
                              2600)) +
   geom_sf(data = nhd_wb[nhd_wb$ftype %in% "LakePond",], color = NA, fill = "darkslategrey") +
   geom_sf(data = nhd_flow, color = "darkslategrey", linewidth = .2) +
-  geom_sf(data = huc6, fill = NA, color = "grey40") +
+  geom_sf(data = feather_dissolve, fill = NA, color = "grey40", linetype = 2) +
   geom_sf(fill = NA, color = "black", linetype = 2) +
   theme_bw() +
+  coord_sf(xlim = c(feather_bbox["xmin"]-.02, feather_bbox["xmax"]+.02),
+    ylim = c(feather_bbox["ymin"]-.02, feather_bbox["ymax"]+.02),
+    expand = FALSE) +
   labs(title = "Draped hypsometric DEM", x = "Longitude", y = "Latitude") +
   annotation_scale(location = "bl", width_hint = 0.2, line_width = 1,
                    pad_x = unit(.35, "in")) + 
@@ -107,5 +104,15 @@ ggplot() +
                          style = north_arrow_fancy_orienteering(),
                          height = unit(0.3,"in"), width = unit(0.3,"in"),
                          pad_x = unit(.02, "in"),pad_y = unit(.02, "in"))
+
+inset <- ggplot() +
+  geom_sf(data = cali_sf, fill = "gray90") +
+  geom_sf(data = feather_dissolve, fill = "grey20") +
+  geom_sf(data = feather_bbox_sf, fill = NA, color = "black") +
+  theme_void()
+
+(combined_map <- ggdraw() +
+  draw_plot(map) +
+  draw_plot(inset, x = .73, y = .65, width = 0.25, height = 0.25))
 
 if(saveplot == T){dev.off()}
