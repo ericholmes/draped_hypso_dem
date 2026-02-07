@@ -197,10 +197,4 @@ final_map
 
 ---
 
-# 🎉 Final Notes
-
-- This README is written in **Quarto‑compatible Markdown**.  
-- You can paste it directly into `README.md` or save it as `README.qmd`.  
-- Running `make_readme_images.R` will generate all images automatically.  
-- The workflow is fully reproducible and uses only open data sources.
 
