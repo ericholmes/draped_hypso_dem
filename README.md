@@ -1,9 +1,4 @@
----
-title: "Draped Hypsometric DEM Workflow"
-format: gfm
-toc: true
-toc-depth: 3
----
+
 
 # 🌄 Draped Hypsometric DEM Workflow  
 
