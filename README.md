@@ -6,7 +6,6 @@ toc-depth: 3
 ---
 
 # 🌄 Draped Hypsometric DEM Workflow  
-*A step‑by‑step geospatial visualization pipeline in R*
 
 This tutorial demonstrates how to generate a **draped hypsometric DEM** clipped to a user‑defined HUC, with **NHD waterbodies** and **flowlines** overlaid.  
 All intermediate images shown below are produced automatically by running `make_readme_images.R`.
@@ -131,7 +130,6 @@ names(hill) <- "shades"
 ---
 
 # 7️⃣ Apply Hypsometric Tint & Draping  
-*(Your exact code preserved)*
 
 ```{r}
 pal_greys <- hcl.colors(1000, "Grays")
