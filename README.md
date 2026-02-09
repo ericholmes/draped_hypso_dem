@@ -2,8 +2,7 @@
 
 # 🌄 Draped Hypsometric DEM Workflow  
 
-This tutorial demonstrates how to generate a **draped hypsometric DEM** clipped to a user‑defined HUC, with **NHD waterbodies** and **flowlines** overlaid.  
-All intermediate images shown below are produced automatically by running `make_readme_images.R`.
+This tutorial demonstrates how to generate a **draped hypsometric DEM** clipped to a user‑defined HUC, with **NHD waterbodies** and **flowlines** overlaid. 
 
 ---
 
