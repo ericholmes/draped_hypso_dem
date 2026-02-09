@@ -6,7 +6,7 @@ This tutorial demonstrates how to generate a **draped hypsometric DEM** clipped 
 
 ---
 
-# 📦 Required Libraries
+# Required Libraries
 
 ```{r}
 library(tidyverse)
@@ -27,7 +27,7 @@ library(cowplot)
 
 ---
 
-# 1️⃣ Define Area of Interest (Oroville, CA)
+# 1️ Define Area of Interest (Oroville, CA)
 
 ```{r}
 oroville_df <- data.frame(Y = 39.534344, X = -121.486103)
@@ -38,7 +38,7 @@ oroville_sf <- st_as_sf(oroville_df, coords = c("X", "Y"), crs = 4326)
 
 ---
 
-# 2️⃣ Load California Boundary (for inset map)
+# 2️ Load California Boundary (for inset map)
 
 ```{r}
 us_states <- map_data("state")
@@ -52,7 +52,7 @@ cali_sf <- st_sf(id = "california", geometry = st_sfc(polygon), crs = 4326)
 
 ---
 
-# 3️⃣ Retrieve HUC Boundaries
+# 3️ Retrieve HUC Boundaries
 
 ```{r}
 huc8 <- nhdplusTools::get_huc(
@@ -72,7 +72,7 @@ feather_bbox_sf <- st_as_sfc(feather_bbox)
 
 ---
 
-# 4️⃣ Load NHD Flowlines & Waterbodies
+# 4️ Load NHD Flowlines & Waterbodies
 
 ```{r}
 nhd_flow <- nhdplusTools::get_nhdplus(
@@ -93,7 +93,7 @@ nhd_wb <- nhdplusTools::get_waterbodies(AOI = feather_dissolve) %>%
 
 ---
 
-# 5️⃣ Download & Clip Elevation Data
+# 5️ Download & Clip Elevation Data
 
 ```{r}
 elevation_data <- get_elev_raster(
@@ -110,7 +110,7 @@ r <- rast(elevation_data)
 
 ---
 
-# 6️⃣ Generate Hillshade
+# 6️ Generate Hillshade
 
 ```{r}
 slope  <- terrain(r, "slope", unit = "radians")
@@ -123,7 +123,7 @@ names(hill) <- "shades"
 
 ---
 
-# 7️⃣ Apply Hypsometric Tint & Draping  
+# 7️ Apply Hypsometric Tint & Draping  
 
 ```{r}
 pal_greys <- hcl.colors(1000, "Grays")
@@ -155,7 +155,7 @@ map_hypso <- ggplot() +
 
 ---
 
-# 8️⃣ Add NHD Water Features
+# 8️ Add NHD Water Features
 
 ```{r}
 map_hypso_nhd <- map_hypso +
@@ -169,7 +169,7 @@ map_hypso_nhd <- map_hypso +
 
 ---
 
-# 9️⃣ Add Inset Map & Compose Final Figure
+# 9️ Add Inset Map & Compose Final Figure
 
 ```{r}
 inset <- ggplot() +
