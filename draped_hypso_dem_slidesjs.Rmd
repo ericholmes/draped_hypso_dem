@@ -1,0 +1,371 @@
+---
+title: "Draped Hypsometric DEM Workflow"
+author: "Eric Holmes (DWR)"
+output:
+  revealjs::revealjs_presentation:
+    theme: simple
+    transition: fade
+    center: true
+---
+
+## Overview
+
+- Define area of interest
+- Download DEM  
+- Generate hillshade  
+- Apply hypsometric tint  
+- Clip to HUC8 watersheds  
+- Overlay NHD hydrology  
+- Add inset map  
+- Produce  textured and tinted elevation map with waterbodies
+
+---
+
+## Required libraries
+  
+```{r, message=FALSE, warning=FALSE}
+
+library(tidyverse)     # Data manipulation + plotting libraries
+library(sf)            # Modern spatial vector data
+library(nhdplusTools)  # Access National Hydrography data (HUCs, flowlines, waterbodies)
+library(elevatr)       # Download elevation rasters
+library(hillshader)    # Generate hillshade from slope/aspect rasters
+library(raster)        # Masking/clipping rasters (used before terra conversion)
+library(terra)         # Terrain derivatives (slope/aspect), raster math
+library(tidyterra)     # ggplot2-friendly raster visualization
+library(scales)        # Rescaling + pretty axis/legend formatting
+library(cowplot)       # Compose final map + inset
+
+```
+
+---
+
+## Step 1 — AOI (Oroville, CA)
+
+::: columns
+::: column
+![AOI](images/step1_aoi.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+
+# define the coordinates of Oroville Dam
+oroville_df <- data.frame(
+  Y = 39.534344,     # latitude
+  X = -121.486103    # longitude
+)
+
+# convert to an sf point object
+oroville_sf <- sf::st_as_sf(
+  oroville_df,
+  coords = c("X", "Y"),
+  crs = 4326          # WGS84 geographic coordinate system
+)
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 2 — California Boundary
+
+::: columns
+::: column
+![California Boundary](images/step2_cali_boundary.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# load US state polygons
+us_states <- maps::map_data("state")
+
+# select only California
+cali <- us_states[us_states$region == "california",]
+
+# convert polygon coords to sf geometry
+polygon <- sf::st_polygon(
+  list(as.matrix(cali[, c("long", "lat")]))
+)
+
+# create an sf object from polygon
+cali_sf <- sf::st_sf(
+  id = "california",
+  geometry = sf::st_sfc(polygon),
+  crs = 4326
+)
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 3 — HUC8 Boundaries
+
+::: columns
+::: column
+![HUC8 Boundaries](images/step3_huc8.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# download HUC8 polygons
+huc8 <- nhdplusTools::get_huc(
+  id = c("18020121", "18020122", "18020123"),
+  type = "huc08"
+) %>%
+  st_transform(4326)   # ensure consistent CRS
+
+# dissolve multiple HUC8s into one combined polygon
+feather_dissolve <- huc8 %>%
+  summarise(geometry = st_union(geometry)) %>%
+  st_as_sf()
+
+# compute bounding box
+feather_bbox <- st_bbox(feather_dissolve)
+
+# convert bbox to polygon
+feather_bbox_sf <- st_as_sfc(feather_bbox)
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 4 — NHD Flowlines & Waterbodies
+
+::: columns
+::: column
+![NHD Layers](images/step4_nhd_layers.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# download NHD flowlines
+nhd_flow <- nhdplusTools::get_nhdplus(
+  AOI = feather_dissolve,
+  realization = "flowline"
+) %>%
+  st_transform(4326)
+
+# Add custom linewidths by stream order
+# cartographic hierarchy
+nhd_flow <- merge(
+  nhd_flow,
+  data.frame(
+    streamorde = 1:6,
+    width = rev(c(1, .8, .6, .4, .2, .1))
+  )
+)
+
+# download lakes/ponds
+nhd_wb <- nhdplusTools::get_waterbodies(
+  AOI = feather_dissolve
+) %>%
+  st_transform(4326)
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 5 — DEM Download & Clip
+
+::: columns
+::: column
+![Clipped DEM](images/step5_dem.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# download DEM tiles
+elevation_data <- elevatr::get_elev_raster(
+  locations = feather_dissolve,
+  z = 10,                         # zoom level
+  prj = st_crs(4326)$proj4string
+)
+
+# clip DEM to watershed
+elevation_data <- raster::mask(
+  elevation_data,
+  feather_dissolve
+)
+
+# convert raster to terra object
+r <- terra::rast(elevation_data)
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 6 — Hillshade
+
+::: columns
+::: column
+![Hillshade](images/step6_hillshade.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# compute slope and aspect
+slope  <- terra::terrain(r, "slope",  unit = "radians")
+aspect <- terra::terrain(r, "aspect", unit = "radians")
+
+# generate hillshade raster
+hill <- hillshader::shade(
+  slope,
+  aspect,
+  angle = 30,      # sun elevation
+  direction = 270  # sun azimuth
+)
+
+names(hill) <- "shades"
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 7 — Hypsometric Tint & Draping
+
+::: columns
+::: column
+![Hypsometric DEM Draped](images/step7_hypso_draped.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# hcl.colors() — grayscale palette for hillshade
+pal_greys <- hcl.colors(1000, "Grays")
+
+# Rescale hillshade values to palette indices
+index <- hill %>%
+  mutate(
+    index_col = scales::rescale(shades, to = c(1, length(pal_greys)))
+  ) %>%
+  mutate(index_col = round(index_col)) %>%
+  pull(index_col)
+
+# Map grayscale values to palette
+vector_cols <- pal_greys[index]
+
+# draw rasters
+map_hypso <- ggplot() +
+  tidyterra::geom_spatraster(
+    data = hill,
+    fill = vector_cols,
+    maxcell = Inf,
+    alpha = 1
+  ) +
+  tidyterra::geom_spatraster(
+    data = r,
+    maxcell = Inf,
+    show.legend = FALSE
+  ) +
+  tidyterra::scale_fill_hypso_tint_c(
+    limits = c(0, 2730),
+    palette = "wiki-2.0_hypso",
+    alpha = 0.6
+  ) +
+  theme_minimal()
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 8 — Add NHD Overlays
+
+::: columns
+::: column
+![Hypsometric DEM + NHD](images/step8_hypso_nhd.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# Add lakes/ponds
+map_hypso_nhd <- map_hypso +
+  ggplot2::geom_sf(
+    data = nhd_wb[nhd_wb$ftype %in% "LakePond",],
+    fill = "darkslategrey",
+    color = NA
+  ) +
+
+  # Add flowlines with hierarchical widths
+  ggplot2::geom_sf(
+    data = nhd_flow,
+    ggplot2::aes(linewidth = width),
+    color = "darkslategrey", show.legend = F
+  ) +
+  scale_linewidth(range = c(0.05, .3))
+```
+
+</div>
+:::
+:::
+
+---
+
+## Step 9 — Final Map with Inset
+
+::: columns
+::: column
+![Final Map](images/step9_final_map.png)
+:::
+
+::: column
+<div style="font-size: 70%;">
+
+```r
+# Build inset map
+inset <- ggplot() +
+  geom_sf(data = cali_sf, fill = "gray90") +
+  geom_sf(data = feather_dissolve, fill = "grey20") +
+  geom_sf(data = feather_bbox_sf, fill = NA, color = "black") +
+  theme_void()
+
+# compose final map
+final_map <- cowplot::ggdraw() +
+  cowplot::draw_plot(map_hypso_nhd) +
+  cowplot::draw_plot(inset, x = .73, y = .65, width = 0.25, height = 0.25)
+
+```
+
+</div>
+:::
+:::
+
+---
+
+## Thank you!
